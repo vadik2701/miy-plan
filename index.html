@@ -1,0 +1,842 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#111827">
+  <meta name="description" content="Мобільний планувальник справ, доставок, нагадувань і нотаток.">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <title>Мій план</title>
+  <style>
+    :root {
+      --ink: #172033;
+      --muted: #697386;
+      --paper: #f6f5f1;
+      --card: #ffffff;
+      --line: #e6e3dc;
+      --accent: #ff6b35;
+      --accent-dark: #d94b19;
+      --blue: #2867d6;
+      --green: #16865a;
+      --amber: #bb7411;
+      --shadow: 0 10px 28px rgba(25, 32, 48, .08);
+    }
+
+    * { box-sizing: border-box; }
+    html { background: var(--paper); }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 90% -10%, rgba(255, 107, 53, .18), transparent 30rem),
+        var(--paper);
+    }
+    button, input, select, textarea { font: inherit; }
+    button { cursor: pointer; }
+
+    .shell {
+      width: min(100%, 760px);
+      margin: 0 auto;
+      padding: max(20px, env(safe-area-inset-top)) 16px calc(96px + env(safe-area-inset-bottom));
+    }
+
+    header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    h1 { margin: 0; font-size: clamp(28px, 8vw, 42px); letter-spacing: -.04em; }
+    .today { margin: 6px 0 0; color: var(--muted); font-size: 14px; text-transform: capitalize; }
+    .icon-button {
+      width: 44px;
+      height: 44px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, .78);
+      color: var(--ink);
+      box-shadow: var(--shadow);
+    }
+
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+    .summary-card {
+      padding: 14px 12px;
+      border: 1px solid rgba(255,255,255,.7);
+      border-radius: 18px;
+      background: rgba(255,255,255,.78);
+      box-shadow: var(--shadow);
+    }
+    .summary-card strong { display: block; font-size: 26px; line-height: 1; }
+    .summary-card span { display: block; margin-top: 7px; color: var(--muted); font-size: 12px; }
+
+    .toolbar {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 12px;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .toolbar::-webkit-scrollbar { display: none; }
+    .chip {
+      flex: 0 0 auto;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 10px 14px;
+      color: var(--muted);
+      background: var(--card);
+    }
+    .chip.active { color: #fff; border-color: var(--ink); background: var(--ink); }
+
+    .search {
+      width: 100%;
+      margin-bottom: 18px;
+      padding: 13px 15px;
+      border: 1px solid var(--line);
+      border-radius: 15px;
+      outline: none;
+      background: rgba(255,255,255,.9);
+    }
+    .search:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(40,103,214,.12); }
+
+    .list { display: grid; gap: 12px; }
+    .empty {
+      padding: 42px 20px;
+      border: 1px dashed #cbc5ba;
+      border-radius: 20px;
+      text-align: center;
+      color: var(--muted);
+      background: rgba(255,255,255,.45);
+    }
+    .empty b { display: block; margin-bottom: 7px; color: var(--ink); font-size: 18px; }
+
+    .delivery {
+      position: relative;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-left: 5px solid var(--blue);
+      border-radius: 18px;
+      background: var(--card);
+      box-shadow: var(--shadow);
+    }
+    .delivery.postponed { border-left-color: var(--amber); }
+    .delivery.done { border-left-color: var(--green); opacity: .72; }
+    .delivery.overdue:not(.done) { border-color: #e99b91; border-left-color: #c93b2d; }
+    .card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+    .delivery h2 { margin: 0; font-size: 18px; line-height: 1.25; }
+    .delivery .client { margin-top: 4px; color: var(--muted); font-size: 14px; }
+    .badge {
+      flex: 0 0 auto;
+      padding: 6px 9px;
+      border-radius: 999px;
+      color: var(--blue);
+      background: #edf4ff;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .postponed .badge { color: #925506; background: #fff3db; }
+    .done .badge { color: #0f7049; background: #e6f6ef; }
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 14px;
+      margin-top: 13px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .notes {
+      margin: 13px 0 0;
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+      white-space: pre-wrap;
+      font-size: 14px;
+      line-height: 1.45;
+    }
+    .card-actions { display: flex; gap: 8px; margin-top: 14px; }
+    .card-actions button {
+      flex: 1;
+      min-height: 38px;
+      border: 0;
+      border-radius: 12px;
+      color: var(--ink);
+      background: #f1f2f4;
+      font-size: 13px;
+      font-weight: 650;
+    }
+    .card-actions .complete { color: #fff; background: var(--green); }
+
+    .fab {
+      position: fixed;
+      right: max(18px, calc((100vw - 760px) / 2 + 18px));
+      bottom: calc(20px + env(safe-area-inset-bottom));
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      min-height: 56px;
+      padding: 0 20px;
+      border: 0;
+      border-radius: 18px;
+      color: #fff;
+      background: var(--accent);
+      box-shadow: 0 14px 30px rgba(217, 75, 25, .35);
+      font-weight: 800;
+    }
+    .fab:hover { background: var(--accent-dark); }
+    .fab span { font-size: 24px; line-height: 1; }
+
+    dialog {
+      width: min(calc(100% - 24px), 560px);
+      max-height: calc(100vh - 24px);
+      padding: 0;
+      border: 0;
+      border-radius: 24px;
+      color: var(--ink);
+      background: var(--card);
+      box-shadow: 0 24px 80px rgba(12, 17, 29, .3);
+    }
+    dialog::backdrop { background: rgba(23,32,51,.5); backdrop-filter: blur(3px); }
+    .modal-head {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 18px 20px;
+      border-bottom: 1px solid var(--line);
+      background: var(--card);
+    }
+    .modal-head h2 { margin: 0; font-size: 21px; }
+    .close { border: 0; background: transparent; color: var(--muted); font-size: 25px; }
+    form { padding: 18px 20px calc(22px + env(safe-area-inset-bottom)); }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; }
+    label { display: block; color: var(--muted); font-size: 13px; font-weight: 650; }
+    label.full { grid-column: 1 / -1; }
+    label input, label select, label textarea {
+      width: 100%;
+      margin-top: 7px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      outline: none;
+      color: var(--ink);
+      background: #fff;
+    }
+    label textarea { min-height: 92px; resize: vertical; }
+    .main-text textarea { min-height: 150px; font-size: 16px; line-height: 1.45; }
+    .check-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 48px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      color: var(--ink);
+      background: #fff7ed;
+    }
+    .check-row input { width: 20px; height: 20px; margin: 0; accent-color: var(--accent); }
+    .type-label {
+      display: inline-block;
+      margin-bottom: 7px;
+      color: var(--accent-dark);
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+    }
+    .reminder-mark { color: var(--accent-dark); font-weight: 750; }
+    label input:focus, label select:focus, label textarea:focus {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 3px rgba(40,103,214,.12);
+    }
+    .form-actions { display: flex; gap: 10px; margin-top: 18px; }
+    .form-actions button {
+      flex: 1;
+      min-height: 48px;
+      border: 0;
+      border-radius: 14px;
+      font-weight: 750;
+    }
+    .save { color: #fff; background: var(--accent); }
+    .delete { color: #a82f23; background: #fff0ee; }
+    .secondary { background: #eef0f3; color: var(--ink); }
+    .settings-actions { display: grid; gap: 10px; padding: 20px; }
+    .settings-actions button, .file-button {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 48px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      color: var(--ink);
+      background: #fff;
+      font-weight: 700;
+    }
+    .settings-actions small { color: var(--muted); line-height: 1.4; }
+    #importFile { display: none; }
+    .toast {
+      position: fixed;
+      left: 50%;
+      bottom: calc(88px + env(safe-area-inset-bottom));
+      z-index: 20;
+      max-width: calc(100% - 32px);
+      padding: 11px 16px;
+      border-radius: 12px;
+      color: #fff;
+      background: #172033;
+      box-shadow: var(--shadow);
+      transform: translate(-50%, 20px);
+      opacity: 0;
+      pointer-events: none;
+      transition: .2s ease;
+    }
+    .toast.show { transform: translate(-50%, 0); opacity: 1; }
+
+    @media (max-width: 460px) {
+      .summary-card { padding: 12px 10px; }
+      .summary-card strong { font-size: 23px; }
+      .grid { grid-template-columns: 1fr; }
+      label.full { grid-column: auto; }
+      .card-actions { flex-wrap: wrap; }
+      .card-actions button { min-width: calc(50% - 4px); }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div>
+        <h1>Мій план</h1>
+        <p class="today" id="today"></p>
+      </div>
+      <button class="icon-button" id="settingsButton" aria-label="Налаштування">⋯</button>
+    </header>
+
+    <section class="summary" aria-label="Підсумок">
+      <div class="summary-card"><strong id="todayCount">0</strong><span>на сьогодні</span></div>
+      <div class="summary-card"><strong id="postponedCount">0</strong><span>відкладено</span></div>
+      <div class="summary-card"><strong id="doneCount">0</strong><span>виконано</span></div>
+    </section>
+
+    <nav class="toolbar" aria-label="Фільтри">
+      <button class="chip active" data-filter="active">Активні</button>
+      <button class="chip" data-filter="today">Сьогодні</button>
+      <button class="chip" data-filter="postponed">Відкладені</button>
+      <button class="chip" data-filter="done">Виконані</button>
+      <button class="chip" data-filter="all">Усі</button>
+    </nav>
+
+    <input class="search" id="search" type="search" placeholder="Пошук у планах, доставках і нотатках">
+    <section class="list" id="deliveryList" aria-live="polite"></section>
+  </main>
+
+  <button class="fab" id="addButton"><span>＋</span> Додати</button>
+
+  <dialog id="deliveryDialog">
+    <div class="modal-head">
+      <h2 id="dialogTitle">Новий запис</h2>
+      <button class="close" type="button" data-close="deliveryDialog" aria-label="Закрити">×</button>
+    </div>
+    <form id="deliveryForm">
+      <input type="hidden" id="deliveryId">
+      <div class="grid">
+        <label class="full main-text">Текст із Viber або ваше завдання *
+          <textarea id="notes" required maxlength="3000" placeholder="Вставте сюди все повідомлення з Viber або напишіть: зайти до шефа, подзвонити клієнту, забрати товар..."></textarea>
+        </label>
+        <label>Тип запису
+          <select id="entryType">
+            <option value="delivery">Доставка</option>
+            <option value="task">Завдання</option>
+            <option value="meeting">Зустріч</option>
+            <option value="call">Дзвінок</option>
+            <option value="other">Інше</option>
+          </select>
+        </label>
+        <label>Коротка назва
+          <input id="client" maxlength="80" placeholder="Можна не заповнювати">
+        </label>
+        <label class="full">Адреса або місце
+          <input id="address" maxlength="160" placeholder="За потреби">
+        </label>
+        <label>Дата *
+          <input id="date" type="date" required>
+        </label>
+        <label>Час нагадування
+          <input id="time" type="time">
+        </label>
+        <label class="full check-row">
+          <input id="reminderEnabled" type="checkbox">
+          Нагадати сповіщенням у вибраний час
+        </label>
+        <label class="full">Повторювати, доки не виконано
+          <select id="repeatMinutes">
+            <option value="5">Кожні 5 хвилин</option>
+            <option value="10" selected>Кожні 10 хвилин</option>
+            <option value="15">Кожні 15 хвилин</option>
+            <option value="30">Кожні 30 хвилин</option>
+            <option value="60">Щогодини</option>
+            <option value="0">Лише один раз</option>
+          </select>
+        </label>
+        <label>Статус
+          <select id="status">
+            <option value="planned">Заплановано</option>
+            <option value="postponed">Відкладено</option>
+            <option value="done">Виконано</option>
+          </select>
+        </label>
+        <label class="full">Телефон
+          <input id="phone" type="tel" maxlength="30" placeholder="+380...">
+        </label>
+      </div>
+      <div class="form-actions">
+        <button class="delete" id="deleteButton" type="button" hidden>Видалити</button>
+        <button class="save" type="submit">Зберегти</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="settingsDialog">
+    <div class="modal-head">
+      <h2>Налаштування</h2>
+      <button class="close" type="button" data-close="settingsDialog" aria-label="Закрити">×</button>
+    </div>
+    <div class="settings-actions">
+      <small>Записи зберігаються лише у цьому браузері. Експорт допоможе перенести їх на інший телефон або відновити після очищення браузера.</small>
+      <button id="notificationButton" type="button">Увімкнути нагадування</button>
+      <button id="exportButton" type="button">Завантажити резервну копію</button>
+      <label class="file-button" for="importFile">Відновити з файлу</label>
+      <input id="importFile" type="file" accept="application/json">
+      <button id="installButton" type="button" hidden>Встановити на телефон</button>
+      <button class="secondary" id="closeSettings" type="button">Готово</button>
+    </div>
+  </dialog>
+
+  <div class="toast" id="toast" role="status"></div>
+
+  <script>
+    const STORAGE_KEY = "delivery-board-v1";
+    const state = {
+      deliveries: loadDeliveries(),
+      filter: "active",
+      search: "",
+      installPrompt: null
+    };
+
+    const $ = (selector) => document.querySelector(selector);
+    const list = $("#deliveryList");
+    const dialog = $("#deliveryDialog");
+    const form = $("#deliveryForm");
+    const todayISO = () => {
+      const now = new Date();
+      const offset = now.getTimezoneOffset() * 60000;
+      return new Date(now - offset).toISOString().slice(0, 10);
+    };
+
+    function loadDeliveries() {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY));
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    }
+
+    function saveDeliveries() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state.deliveries));
+      render();
+    }
+
+    function escapeHTML(value = "") {
+      return String(value).replace(/[&<>"']/g, char => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;"
+      })[char]);
+    }
+
+    function formatDate(value) {
+      if (!value) return "";
+      return new Intl.DateTimeFormat("uk-UA", {
+        weekday: "short", day: "numeric", month: "short"
+      }).format(new Date(value + "T12:00:00"));
+    }
+
+    function statusLabel(status) {
+      return { planned: "Заплановано", postponed: "Відкладено", done: "Виконано" }[status] || "Заплановано";
+    }
+
+    function typeLabel(type) {
+      return {
+        delivery: "Доставка",
+        task: "Завдання",
+        meeting: "Зустріч",
+        call: "Дзвінок",
+        other: "Інше"
+      }[type] || "Доставка";
+    }
+
+    function itemTitle(item) {
+      if (item.client?.trim()) return item.client.trim();
+      const firstLine = (item.notes || "").split(/\r?\n/).find(line => line.trim()) || "Новий запис";
+      return firstLine.trim().slice(0, 80);
+    }
+
+    function filteredDeliveries() {
+      const today = todayISO();
+      const query = state.search.trim().toLocaleLowerCase("uk");
+      return state.deliveries
+        .filter(item => {
+          if (state.filter === "active" && item.status === "done") return false;
+          if (state.filter === "today" && item.date !== today) return false;
+          if (state.filter === "postponed" && item.status !== "postponed") return false;
+          if (state.filter === "done" && item.status !== "done") return false;
+          if (!query) return true;
+          return [item.client, item.address, item.phone, item.notes, typeLabel(item.entryType)]
+            .join(" ").toLocaleLowerCase("uk").includes(query);
+        })
+        .sort((a, b) => {
+          if (a.status === "done" && b.status !== "done") return 1;
+          if (a.status !== "done" && b.status === "done") return -1;
+          return `${a.date} ${a.time || "23:59"}`.localeCompare(`${b.date} ${b.time || "23:59"}`);
+        });
+    }
+
+    function render() {
+      const today = todayISO();
+      $("#todayCount").textContent = state.deliveries.filter(x => x.date === today && x.status !== "done").length;
+      $("#postponedCount").textContent = state.deliveries.filter(x => x.status === "postponed").length;
+      $("#doneCount").textContent = state.deliveries.filter(x => x.status === "done").length;
+
+      const items = filteredDeliveries();
+      if (!items.length) {
+        list.innerHTML = `<div class="empty"><b>Тут поки порожньо</b>Додайте справу, доставку або інший запис.</div>`;
+        return;
+      }
+
+      list.innerHTML = items.map(item => {
+        const overdue = item.date < today && item.status !== "done";
+        const classes = ["delivery", item.status, overdue ? "overdue" : ""].join(" ");
+        const phoneLink = item.phone
+          ? `<span>☎ <a href="tel:${escapeHTML(item.phone)}">${escapeHTML(item.phone)}</a></span>`
+          : "";
+        return `
+          <article class="${classes}">
+            <div class="card-top">
+              <div>
+                <span class="type-label">${escapeHTML(typeLabel(item.entryType))}</span>
+                <h2>${escapeHTML(itemTitle(item))}</h2>
+                ${item.address ? `<div class="client">${escapeHTML(item.address)}</div>` : ""}
+              </div>
+              <span class="badge">${overdue ? "Прострочено" : statusLabel(item.status)}</span>
+            </div>
+            <div class="meta">
+              <span>📅 ${formatDate(item.date)}${item.time ? `, ${escapeHTML(item.time)}` : ""}</span>
+              ${item.reminderEnabled && item.time
+                ? `<span class="reminder-mark">🔔 ${Number(item.repeatMinutes ?? 10) > 0
+                    ? `кожні ${escapeHTML(item.repeatMinutes ?? 10)} хв`
+                    : "одноразово"}</span>`
+                : ""}
+              ${phoneLink}
+            </div>
+            ${item.notes ? `<p class="notes">${escapeHTML(item.notes)}</p>` : ""}
+            <div class="card-actions">
+              <button type="button" data-action="edit" data-id="${item.id}">Редагувати</button>
+              ${item.status !== "postponed" && item.status !== "done"
+                ? `<button type="button" data-action="postpone" data-id="${item.id}">Відкласти</button>` : ""}
+              ${item.status !== "done"
+                ? `<button class="complete" type="button" data-action="done" data-id="${item.id}">Виконано</button>`
+                : `<button type="button" data-action="restore" data-id="${item.id}">Повернути</button>`}
+            </div>
+          </article>`;
+      }).join("");
+    }
+
+    function openNew() {
+      form.reset();
+      $("#deliveryId").value = "";
+      $("#date").value = todayISO();
+      $("#entryType").value = "delivery";
+      $("#reminderEnabled").checked = false;
+      $("#repeatMinutes").value = "10";
+      $("#dialogTitle").textContent = "Новий запис";
+      $("#deleteButton").hidden = true;
+      dialog.showModal();
+      setTimeout(() => $("#notes").focus(), 50);
+    }
+
+    function openEdit(id) {
+      const item = state.deliveries.find(x => x.id === id);
+      if (!item) return;
+      $("#deliveryId").value = item.id;
+      $("#client").value = item.client || "";
+      $("#entryType").value = item.entryType || "delivery";
+      $("#address").value = item.address || "";
+      $("#date").value = item.date || todayISO();
+      $("#time").value = item.time || "";
+      $("#status").value = item.status || "planned";
+      $("#phone").value = item.phone || "";
+      $("#notes").value = item.notes || "";
+      $("#reminderEnabled").checked = Boolean(item.reminderEnabled);
+      $("#repeatMinutes").value = String(item.repeatMinutes ?? 10);
+      $("#dialogTitle").textContent = "Редагувати запис";
+      $("#deleteButton").hidden = false;
+      dialog.showModal();
+    }
+
+    async function updateStatus(id, status) {
+      const item = state.deliveries.find(x => x.id === id);
+      if (!item) return;
+      item.status = status;
+      if (status !== "done") item.reminderSentAt = null;
+      item.updatedAt = new Date().toISOString();
+      saveDeliveries();
+      if (status === "done" && "serviceWorker" in navigator) {
+        try {
+          const registration = await navigator.serviceWorker.ready;
+          const notifications = await registration.getNotifications({ tag: `plan-${item.id}` });
+          notifications.forEach(notification => notification.close());
+        } catch {}
+      }
+      showToast(status === "done" ? "Запис виконано" : "Статус оновлено");
+    }
+
+    async function requestNotifications() {
+      if (!("Notification" in window)) {
+        alert("Цей браузер не підтримує системні сповіщення.");
+        return false;
+      }
+      const permission = await Notification.requestPermission();
+      updateNotificationButton();
+      if (permission === "granted") {
+        showToast("Нагадування увімкнено");
+        return true;
+      }
+      alert("Дозвіл на сповіщення не надано. Його можна змінити в налаштуваннях браузера.");
+      return false;
+    }
+
+    function updateNotificationButton() {
+      const button = $("#notificationButton");
+      if (!("Notification" in window)) {
+        button.textContent = "Сповіщення не підтримуються";
+        button.disabled = true;
+      } else if (Notification.permission === "granted") {
+        button.textContent = "Нагадування увімкнено";
+      } else {
+        button.textContent = "Увімкнути нагадування";
+      }
+    }
+
+    async function showReminder(item) {
+      const title = itemTitle(item);
+      const options = {
+        body: item.notes || typeLabel(item.entryType),
+        icon: "icon.svg",
+        badge: "icon.svg",
+        tag: `plan-${item.id}`,
+        renotify: true,
+        requireInteraction: true,
+        data: { id: item.id }
+      };
+      try {
+        if ("serviceWorker" in navigator) {
+          const registration = await navigator.serviceWorker.ready;
+          await registration.showNotification(title, options);
+        } else {
+          new Notification(title, options);
+        }
+      } catch {
+        new Notification(title, options);
+      }
+    }
+
+    async function checkReminders() {
+      if (!("Notification" in window) || Notification.permission !== "granted") return;
+      const now = Date.now();
+      const due = state.deliveries.filter(item => {
+        if (!item.reminderEnabled || !item.date || !item.time || item.status === "done") return false;
+        const startAt = new Date(`${item.date}T${item.time}:00`).getTime();
+        if (startAt > now) return false;
+        if (!item.reminderSentAt) return true;
+        const repeatMinutes = Number(item.repeatMinutes ?? 10);
+        if (repeatMinutes <= 0) return false;
+        return new Date(item.reminderSentAt).getTime() + repeatMinutes * 60000 <= now;
+      });
+      for (const item of due) {
+        await showReminder(item);
+        item.reminderSentAt = new Date().toISOString();
+      }
+      if (due.length) saveDeliveries();
+    }
+
+    function showToast(message) {
+      const toast = $("#toast");
+      toast.textContent = message;
+      toast.classList.add("show");
+      clearTimeout(showToast.timer);
+      showToast.timer = setTimeout(() => toast.classList.remove("show"), 2200);
+    }
+
+    $("#today").textContent = new Intl.DateTimeFormat("uk-UA", {
+      weekday: "long", day: "numeric", month: "long"
+    }).format(new Date());
+
+    $("#addButton").addEventListener("click", openNew);
+    $("#settingsButton").addEventListener("click", () => $("#settingsDialog").showModal());
+    $("#closeSettings").addEventListener("click", () => $("#settingsDialog").close());
+    document.querySelectorAll("[data-close]").forEach(button => {
+      button.addEventListener("click", () => document.getElementById(button.dataset.close).close());
+    });
+
+    document.querySelectorAll(".chip").forEach(button => {
+      button.addEventListener("click", () => {
+        document.querySelectorAll(".chip").forEach(x => x.classList.remove("active"));
+        button.classList.add("active");
+        state.filter = button.dataset.filter;
+        render();
+      });
+    });
+
+    $("#search").addEventListener("input", event => {
+      state.search = event.target.value;
+      render();
+    });
+
+    form.addEventListener("submit", async event => {
+      event.preventDefault();
+      const reminderEnabled = $("#reminderEnabled").checked;
+      if (reminderEnabled && !$("#time").value) {
+        alert("Для нагадування виберіть час.");
+        $("#time").focus();
+        return;
+      }
+      if (reminderEnabled && (!("Notification" in window) || Notification.permission !== "granted")) {
+        const allowed = await requestNotifications();
+        if (!allowed) return;
+      }
+      const id = $("#deliveryId").value;
+      const existing = state.deliveries.find(x => x.id === id);
+      const reminderChanged = existing &&
+        (existing.date !== $("#date").value ||
+          existing.time !== $("#time").value ||
+          existing.reminderEnabled !== reminderEnabled ||
+          Number(existing.repeatMinutes ?? 10) !== Number($("#repeatMinutes").value));
+      const item = {
+        id: id || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())),
+        client: $("#client").value.trim(),
+        entryType: $("#entryType").value,
+        address: $("#address").value.trim(),
+        date: $("#date").value,
+        time: $("#time").value,
+        status: $("#status").value,
+        phone: $("#phone").value.trim(),
+        notes: $("#notes").value.trim(),
+        reminderEnabled,
+        repeatMinutes: Number($("#repeatMinutes").value),
+        reminderSentAt: reminderChanged ? null : (existing?.reminderSentAt || null),
+        createdAt: existing?.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      if (existing) Object.assign(existing, item);
+      else state.deliveries.push(item);
+      saveDeliveries();
+      dialog.close();
+      showToast(reminderEnabled ? "Запис і нагадування збережено" : "Запис збережено");
+      checkReminders();
+    });
+
+    $("#deleteButton").addEventListener("click", () => {
+      const id = $("#deliveryId").value;
+      if (!id || !confirm("Видалити цей запис?")) return;
+      state.deliveries = state.deliveries.filter(x => x.id !== id);
+      saveDeliveries();
+      dialog.close();
+      showToast("Запис видалено");
+    });
+
+    list.addEventListener("click", event => {
+      const button = event.target.closest("[data-action]");
+      if (!button) return;
+      const { action, id } = button.dataset;
+      if (action === "edit") openEdit(id);
+      if (action === "postpone") {
+        openEdit(id);
+        $("#status").value = "postponed";
+        $("#dialogTitle").textContent = "Відкласти запис";
+        setTimeout(() => $("#date").focus(), 50);
+      }
+      if (action === "done") updateStatus(id, "done");
+      if (action === "restore") updateStatus(id, "planned");
+    });
+
+    $("#exportButton").addEventListener("click", () => {
+      const blob = new Blob([JSON.stringify(state.deliveries, null, 2)], { type: "application/json" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `miy-plan-${todayISO()}.json`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+      showToast("Резервну копію завантажено");
+    });
+
+    $("#importFile").addEventListener("change", async event => {
+      const file = event.target.files[0];
+      if (!file) return;
+      try {
+        const data = JSON.parse(await file.text());
+        if (!Array.isArray(data)) throw new Error("Невірний формат");
+        if (!confirm(`Відновити ${data.length} записів? Поточні записи буде замінено.`)) return;
+        state.deliveries = data;
+        saveDeliveries();
+        $("#settingsDialog").close();
+        showToast("Дані відновлено");
+      } catch {
+        alert("Не вдалося прочитати резервну копію.");
+      } finally {
+        event.target.value = "";
+      }
+    });
+
+    window.addEventListener("beforeinstallprompt", event => {
+      event.preventDefault();
+      state.installPrompt = event;
+      $("#installButton").hidden = false;
+    });
+
+    $("#installButton").addEventListener("click", async () => {
+      if (!state.installPrompt) return;
+      state.installPrompt.prompt();
+      await state.installPrompt.userChoice;
+      state.installPrompt = null;
+      $("#installButton").hidden = true;
+    });
+
+    $("#notificationButton").addEventListener("click", requestNotifications);
+    $("#reminderEnabled").addEventListener("change", event => {
+      if (event.target.checked && !$("#time").value) {
+        $("#time").focus();
+      }
+    });
+
+    if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+      navigator.serviceWorker.register("service-worker.js");
+    }
+
+    updateNotificationButton();
+    render();
+    checkReminders();
+    setInterval(checkReminders, 15000);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") checkReminders();
+    });
+  </script>
+</body>
+</html>
