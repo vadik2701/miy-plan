@@ -282,6 +282,14 @@
       font-weight: 700;
     }
     .settings-actions small { color: var(--muted); line-height: 1.4; }
+    .sync-status {
+      padding: 12px;
+      border-radius: 12px;
+      color: var(--muted);
+      background: #f3f5f8;
+      text-align: center;
+    }
+    .sync-status.online { color: #0f7049; background: #e6f6ef; }
     #importFile { display: none; }
     .toast {
       position: fixed;
@@ -411,7 +419,10 @@
       <button class="close" type="button" data-close="settingsDialog" aria-label="Закрити">×</button>
     </div>
     <div class="settings-actions">
-      <small>Записи зберігаються лише у цьому браузері. Експорт допоможе перенести їх на інший телефон або відновити після очищення браузера.</small>
+      <small id="storageHelp">Записи зберігаються у цьому браузері. Увійдіть, щоб синхронізувати їх між ПК та iPhone.</small>
+      <div class="sync-status" id="syncStatus">Синхронізацію не підключено</div>
+      <button id="loginButton" type="button">Увійти для синхронізації</button>
+      <button id="logoutButton" type="button" hidden>Вийти з облікового запису</button>
       <button id="notificationButton" type="button">Увімкнути нагадування</button>
       <button id="exportButton" type="button">Завантажити резервну копію</button>
       <label class="file-button" for="importFile">Відновити з файлу</label>
@@ -421,15 +432,70 @@
     </div>
   </dialog>
 
+  <dialog id="authDialog">
+    <div class="modal-head">
+      <h2>Синхронізація</h2>
+      <button class="close" type="button" data-close="authDialog" aria-label="Закрити">×</button>
+    </div>
+    <form id="authForm">
+      <div class="grid">
+        <label class="full">Email
+          <input id="authEmail" type="email" required autocomplete="email" placeholder="ваш@email.com">
+        </label>
+        <label class="full">Пароль
+          <input id="authPassword" type="password" required minlength="6" autocomplete="current-password" placeholder="Не менше 6 символів">
+        </label>
+      </div>
+      <small>На ПК та iPhone використовуйте однакові email і пароль.</small>
+      <div class="form-actions">
+        <button class="secondary" id="registerButton" type="button">Створити акаунт</button>
+        <button class="save" type="submit">Увійти</button>
+      </div>
+    </form>
+  </dialog>
+
   <div class="toast" id="toast" role="status"></div>
 
-  <script>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
+    import {
+      getAuth,
+      createUserWithEmailAndPassword,
+      signInWithEmailAndPassword,
+      signOut,
+      onAuthStateChanged
+    } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-auth.js";
+    import {
+      getFirestore,
+      doc,
+      getDoc,
+      setDoc,
+      onSnapshot,
+      serverTimestamp
+    } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyDdjXHpnL1TB8uLkcJuuYsQH655u5bVMJs",
+      authDomain: "miy-plan.firebaseapp.com",
+      projectId: "miy-plan",
+      storageBucket: "miy-plan.firebasestorage.app",
+      messagingSenderId: "922571135345",
+      appId: "1:922571135345:web:a2ff34bbb9a75d89437ed0"
+    };
+
+    const firebaseApp = initializeApp(firebaseConfig);
+    const auth = getAuth(firebaseApp);
+    const db = getFirestore(firebaseApp);
     const STORAGE_KEY = "delivery-board-v1";
     const state = {
       deliveries: loadDeliveries(),
       filter: "active",
       search: "",
-      installPrompt: null
+      installPrompt: null,
+      user: null,
+      cloudUnsubscribe: null,
+      cloudReady: false,
+      syncTimer: null
     };
 
     const $ = (selector) => document.querySelector(selector);
@@ -454,6 +520,94 @@
     function saveDeliveries() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state.deliveries));
       render();
+      scheduleCloudSave();
+    }
+
+    function mergeDeliveries(localItems, cloudItems) {
+      const merged = new Map();
+      [...cloudItems, ...localItems].forEach(item => {
+        const current = merged.get(item.id);
+        const itemTime = new Date(item.updatedAt || item.createdAt || 0).getTime();
+        const currentTime = new Date(current?.updatedAt || current?.createdAt || 0).getTime();
+        if (!current || itemTime >= currentTime) merged.set(item.id, item);
+      });
+      return [...merged.values()];
+    }
+
+    function cloudDocument() {
+      return state.user ? doc(db, "users", state.user.uid, "data", "plan") : null;
+    }
+
+    function scheduleCloudSave() {
+      if (!state.user || !state.cloudReady) return;
+      clearTimeout(state.syncTimer);
+      state.syncTimer = setTimeout(saveToCloud, 500);
+    }
+
+    async function saveToCloud() {
+      if (!state.user || !state.cloudReady) return;
+      setSyncStatus("Синхронізація...", false);
+      try {
+        await setDoc(cloudDocument(), {
+          deliveries: state.deliveries,
+          updatedAt: serverTimestamp()
+        });
+        setSyncStatus(`Синхронізовано: ${state.user.email}`, true);
+      } catch (error) {
+        console.error(error);
+        setSyncStatus("Помилка синхронізації", false);
+      }
+    }
+
+    function setSyncStatus(message, online) {
+      const status = $("#syncStatus");
+      status.textContent = message;
+      status.classList.toggle("online", online);
+    }
+
+    async function startCloudSync(user) {
+      state.cloudReady = false;
+      setSyncStatus("Підключення до хмари...", false);
+      const reference = cloudDocument();
+      try {
+        const snapshot = await getDoc(reference);
+        const cloudItems = snapshot.exists() && Array.isArray(snapshot.data().deliveries)
+          ? snapshot.data().deliveries
+          : [];
+        state.deliveries = mergeDeliveries(state.deliveries, cloudItems);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state.deliveries));
+        render();
+        state.cloudReady = true;
+        await saveToCloud();
+        state.cloudUnsubscribe = onSnapshot(reference, nextSnapshot => {
+          if (!nextSnapshot.exists()) return;
+          const incoming = nextSnapshot.data().deliveries;
+          if (!Array.isArray(incoming)) return;
+          if (JSON.stringify(incoming) !== JSON.stringify(state.deliveries)) {
+            state.deliveries = incoming;
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(state.deliveries));
+            render();
+          }
+          setSyncStatus(`Синхронізовано: ${user.email}`, true);
+        }, error => {
+          console.error(error);
+          setSyncStatus("Немає доступу до Firestore", false);
+        });
+      } catch (error) {
+        console.error(error);
+        setSyncStatus("Не вдалося підключити Firestore", false);
+      }
+    }
+
+    function firebaseErrorMessage(error) {
+      return {
+        "auth/email-already-in-use": "Цей email уже зареєстрований. Натисніть «Увійти».",
+        "auth/invalid-email": "Перевірте правильність email.",
+        "auth/invalid-credential": "Невірний email або пароль.",
+        "auth/weak-password": "Пароль повинен містити щонайменше 6 символів.",
+        "auth/operation-not-allowed": "У Firebase ще не ввімкнено вхід через email і пароль.",
+        "auth/unauthorized-domain": "Домен GitHub Pages не дозволений у Firebase Authentication."
+      }[error.code] || `Помилка Firebase: ${error.message}`;
     }
 
     function escapeHTML(value = "") {
@@ -692,8 +846,58 @@
     $("#addButton").addEventListener("click", openNew);
     $("#settingsButton").addEventListener("click", () => $("#settingsDialog").showModal());
     $("#closeSettings").addEventListener("click", () => $("#settingsDialog").close());
+    $("#loginButton").addEventListener("click", () => {
+      $("#settingsDialog").close();
+      $("#authDialog").showModal();
+      setTimeout(() => $("#authEmail").focus(), 50);
+    });
+    $("#logoutButton").addEventListener("click", async () => {
+      await signOut(auth);
+      showToast("Ви вийшли з синхронізації");
+    });
     document.querySelectorAll("[data-close]").forEach(button => {
       button.addEventListener("click", () => document.getElementById(button.dataset.close).close());
+    });
+
+    $("#authForm").addEventListener("submit", async event => {
+      event.preventDefault();
+      try {
+        await signInWithEmailAndPassword(auth, $("#authEmail").value.trim(), $("#authPassword").value);
+        $("#authDialog").close();
+        showToast("Вхід виконано");
+      } catch (error) {
+        alert(firebaseErrorMessage(error));
+      }
+    });
+
+    $("#registerButton").addEventListener("click", async () => {
+      if (!$("#authForm").reportValidity()) return;
+      try {
+        await createUserWithEmailAndPassword(auth, $("#authEmail").value.trim(), $("#authPassword").value);
+        $("#authDialog").close();
+        showToast("Акаунт створено");
+      } catch (error) {
+        alert(firebaseErrorMessage(error));
+      }
+    });
+
+    onAuthStateChanged(auth, user => {
+      if (state.cloudUnsubscribe) {
+        state.cloudUnsubscribe();
+        state.cloudUnsubscribe = null;
+      }
+      state.user = user;
+      state.cloudReady = false;
+      $("#loginButton").hidden = Boolean(user);
+      $("#logoutButton").hidden = !user;
+      if (user) {
+        $("#logoutButton").textContent = `Вийти (${user.email})`;
+        $("#storageHelp").textContent = "Записи синхронізуються з Firebase між усіма пристроями, де ви ввійшли в цей акаунт.";
+        startCloudSync(user);
+      } else {
+        $("#storageHelp").textContent = "Записи зберігаються у цьому браузері. Увійдіть, щоб синхронізувати їх між ПК та iPhone.";
+        setSyncStatus("Синхронізацію не підключено", false);
+      }
     });
 
     document.querySelectorAll(".chip").forEach(button => {

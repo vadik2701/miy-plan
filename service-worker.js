@@ -1,4 +1,4 @@
-const CACHE = "delivery-board-v3";
+const CACHE = "delivery-board-v4";
 const ASSETS = ["./", "index.html", "manifest.webmanifest", "icon.svg"];
 
 self.addEventListener("install", event => {
